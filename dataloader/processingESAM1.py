@@ -43,17 +43,20 @@ def esa():
             if row["Channel"] == param:
                 anomaly_type = anomaly_types_df.loc[anomaly_types_df["ID"] == row["ID"]]["Category"].values[0]
                 if anomaly_type == "Anomaly":
-                    label_value = 1 
+                    label_value = 1 #Anomaly
                 elif anomaly_type == "Rare Event":
-                    label_value = 0
+                    label_value = 0#Rare Event #我把这个当正常
                 param_df.loc[row["StartTime"]:row["EndTime"], "label"] = label_value
                 is_param_annotated = True
+
+
+        # param_df = param_df[param_df.index > parse_date(test_data_split)].copy()
 
         if len(param_df) == 0:
             params_dict[param] = []
             continue
 
-
+        # Resample using zero order hold
         resampling_rule = pd.Timedelta(seconds=18)
         first_index_resampled = pd.Timestamp(param_df.index[0]).floor(freq=resampling_rule)
         last_index_resampled = pd.Timestamp(param_df.index[-1]).ceil(freq=resampling_rule)
@@ -61,14 +64,14 @@ def esa():
         params_dict[param] = param_df.reindex(resampled_range, method="ffill")
         params_dict[param].iloc[0] = param_df.iloc[0]  # Initialize the first sample
 
-
+        # Restore annotated samples if not present in the resampled series
         if is_param_annotated:
             grouper = param_df.groupby(pd.Grouper(freq=resampling_rule))
             for timestamp, group in grouper.indices.items():
                 if len(group) <= 1:
                     continue
                 org_elements = param_df.iloc[group]
-                if org_elements.label.values[-1] != 0: 
+                if org_elements.label.values[-1] != 0: #normal
                     continue
                 is_annotated = (org_elements.label > 0)
                 if is_annotated.any():
@@ -96,8 +99,10 @@ def esa():
     data_df["label"] = (data_df[anomaly_columns] == 1).any(axis=1).astype(np.uint8)
     print(data_df.head())
     print(anomaly_columns)
+    # 删除原来的 is_anomaly_* 列
     data_df = data_df.drop(columns=anomaly_columns)
 
+    visualize_all_dimensions(data_df, output_path=os.path.join(dataset_folder, "data_df_visualization.png"))
 
     train_param_df = data_df[data_df.index <= parse_date(test_data_split)].copy()
     test_param_df = data_df[data_df.index > parse_date(test_data_split)].copy()
@@ -114,13 +119,28 @@ def esa():
     train_param_df = train_param_df.rename_axis("datetime")
     train_labels = train_labels.rename_axis("datetime")
 
-    test_labels.to_csv(os.path.join(dataset_folder, "esa_test_labels.csv"))
-    train_labels.to_csv(os.path.join(dataset_folder, "esa_train_labels.csv"))
+    # test_labels.to_csv(os.path.join(dataset_folder, "esa_test_labels.csv"))
+    # train_labels.to_csv(os.path.join(dataset_folder, "esa_train_labels.csv"))
 
-    train_param_df.to_csv(os.path.join(dataset_folder, "esa_train.csv"))
-    test_param_df.to_csv(os.path.join(dataset_folder, "esa_test.csv"))
+    # train_param_df.to_csv(os.path.join(dataset_folder, "esa_train.csv"))
+    # test_param_df.to_csv(os.path.join(dataset_folder, "esa_test.csv"))
 
+    visualize_data(
+        train_param_df,
+        train_labels,
+        output_path=os.path.join(dataset_folder, "esa_train_visualization.png")
+    )
 
+    # 可视化测试集
+    visualize_data(
+        test_param_df,
+        test_labels,
+        output_path=os.path.join(dataset_folder, "esa_test_visualization.png")
+    )
+
+    np.save(os.path.join(dataset_folder, "esa_train.npy"), train_param_df)
+    np.save(os.path.join(dataset_folder, "esa_test.npy"), test_param_df)
+    np.save(os.path.join(dataset_folder, "esa_test_labels.npy"), test_labels)
 
 
 def find_full_time_range(params_dict: dict):
@@ -137,6 +157,62 @@ def find_full_time_range(params_dict: dict):
 
     return start_time, end_time
 
+
+def visualize_data(data_df, anomaly_labels, output_path="visualization.png"):
+    """
+    可视化数据集，绘制多维时间序列，并用红色标出异常值。
+
+    :param data_df: 数据集的 DataFrame，包含多维时间序列。
+    :param anomaly_labels: 异常标签列，1 表示异常，0 表示正常。
+    :param output_path: 保存可视化结果的路径。
+    """
+    plt.figure(figsize=(15, 10))
+    num_dimensions = min(11, data_df.shape[1])  # 限制最多绘制 11 维数据
+    time_index = data_df.index
+
+    for i, column in enumerate(data_df.columns[:num_dimensions]):
+        plt.subplot(num_dimensions, 1, i + 1)
+        plt.plot(time_index, data_df[column], label=column, color="blue", linewidth=0.5)
+        plt.ylabel(column)
+        plt.xlabel("Time")
+        plt.grid(True)
+
+        # 标出异常值
+        anomaly_indices = anomaly_labels[anomaly_labels == 1].index
+        for anomaly_time in anomaly_indices:
+            plt.axvline(x=anomaly_time, color="red", linestyle="--", linewidth=0.8)
+
+        if i == 0:
+            plt.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.show()
+
+
+def visualize_all_dimensions(data_df, output_path="data_df_visualization.png"):
+    """
+    可视化 data_df 中的每个维度，绘制多维时间序列。
+
+    :param data_df: 数据集的 DataFrame，包含多维时间序列。
+    :param output_path: 保存可视化结果的路径。
+    """
+    plt.figure(figsize=(15, 10))
+    num_dimensions = min(11, data_df.shape[1])  # 限制最多绘制 11 维数据
+    time_index = data_df.index
+
+    for i, column in enumerate(data_df.columns[:num_dimensions]):
+        plt.subplot(num_dimensions, 1, i + 1)
+        plt.plot(time_index, data_df[column], label=column, color="blue", linewidth=0.5)
+        plt.ylabel(column)
+        plt.xlabel("Time")
+        plt.grid(True)
+        if i == 0:
+            plt.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.show()
 
 
 if __name__ == "__main__":

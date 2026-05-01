@@ -10,6 +10,7 @@ from models.reasonable_metric import reasonable_accumulator
 from torch.autograd import Variable
 # from torch.utils.tensorboard import SummaryWriter
 from .early_stopping import EarlyStopping
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 sys.path.append("../../")
 def Trainer(model, model_optimizer, train_dl, val_dl, test_dl, device, config, idx):
@@ -36,36 +37,16 @@ def Trainer(model, model_optimizer, train_dl, val_dl, test_dl, device, config, i
                     )
         all_epoch_train_loss.append(train_loss.item())
         all_epoch_test_loss.append(test_loss.item())
-        if config.dataset == 'UCR':
-            val_affiliation, val_score, _, _, _ = ad_predict(val_target, val_score_origin, config.threshold_determine,
-                                                       config.detect_nu)
-            test_affiliation, test_score, _, _, predict = ad_predict(test_target, test_score_origin, config.threshold_determine,
-                                                       config.detect_nu)
-            score_reasonable = tsad_reasonable(test_target, predict, config.time_step)
-            indicator = test_score.f1(ScoreType.RevisedPointAdjusted)
-            early_stopping(score_reasonable, test_affiliation, test_score, indicator, val_score_origin,
-                           test_score_origin, model)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-        elif config.dataset == 'SWaT' or config.dataset == 'WADI':
+        if config.dataset == 'SWaT' or config.dataset == 'WADI':
             early_stopping(0, 0, 0, -val_loss.item(), val_score_origin, test_score_origin, model)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
 
+
     print("\n################## Training is Done! #########################")
     # according to scores to create predicting labels
-    if config.dataset == 'UCR':
-        score_reasonable = early_stopping.best_score_reasonable
-        # The UCR validation set has no anomaly, so it does not print.
-        test_score_origin = early_stopping.best_predict2
-        test_affiliation, test_rpa_score, test_pa_score, test_pw_score, predict = ad_predict(test_target,
-                                                                                             test_score_origin,
-                                                                                             config.threshold_determine,
-                                                                                             config.detect_nu)
-
-    elif config.dataset == 'SWaT' or config.dataset == 'WADI':
+    if config.dataset == 'SWaT' or config.dataset == 'WADI':
         val_score_origin = early_stopping.best_predict1
         test_score_origin = early_stopping.best_predict2
         print('best loss: {:.4f}'.format(early_stopping.best_indicator))
@@ -129,14 +110,12 @@ def Trainer(model, model_optimizer, train_dl, val_dl, test_dl, device, config, i
     print(
         f'Test F1: {test_pw_f1:2.4f}  | \tTest precision: {test_pw_precision:2.4f}  | \tTest recall: {test_pw_recall:2.4f}\n')
 
-    # writer = SummaryWriter()
-    # for i in range(config.num_epoch):
-    #     writer.add_scalars('loss', {'train': all_epoch_train_loss[i],
-    #                                 'test': all_epoch_test_loss[i]}, i)
-    # # writer.add_embedding(part_embedding_feature, metadata=part_embedding_target, tag='test embedding')
-    # writer.close()
+    roc_auc = roc_auc_score(test_target, test_score_origin)
+    print(f"ROC-AUC: {roc_auc:.5f}")
+    pr_auc = average_precision_score(test_target, test_score_origin)
+    print(f"PR-AUC:  {pr_auc:.5f}")
 
-    return test_score_origin, test_affiliation, test_rpa_score, test_pa_score, test_pw_score, score_reasonable, predict
+    return test_score_origin, test_affiliation, test_rpa_score, test_pa_score, test_pw_score, score_reasonable, predict, roc_auc, pr_auc
 
 def mixup_data(x, y, alpha=1.0, device="cuda"):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -170,21 +149,14 @@ def model_train(model, model_optimizer, train_loader, config, device, epoch):
         data, target = data.float().to(device), target.float().to(device)
         # optimizer
         model_optimizer.zero_grad()
-        #mixup的样本进去学
-        # inputs, targets_a, targets_b, lam = mixup_data(data, target,
-        #                                                config.alpha, device)
-        # inputs, targets_a, targets_b = map(Variable, (data,
-        #                                               targets_a, targets_b))
 
-        if config.alpha > 0 and config.layer_mix != 0 and config.ab_mix:
+        if config.alpha > 0 and config.layer_mix != 0:
             logits, y_a, y_b, lam = model(data, target, True, device)
             lam = torch.tensor(lam).to(device)
             target = lam * y_a + (1-lam) * y_b
             # print('logits1:',logits)
         else:
             logits = model(data, target, False)
-            # print('logits2:',logits)
-        # loss, score = cal_mix_loss_score(logits, targets_a, targets_b, config, lam)
         loss, score = train(logits, target, device)
         # Update hypersphere radius R on mini-batch distances
         total_loss.append(loss.item())

@@ -47,7 +47,6 @@ class Load_Dataset(Dataset):
     def __len__(self):
         return self.len
 
-
 def data_generator(train_data, test_data, train_labels, test_labels, seed, configs):
     test_anomaly_window_num = int(len(np.where(test_labels[1:] != test_labels[:-1])[0]) / 2)
 
@@ -72,38 +71,33 @@ def data_generator(train_data, test_data, train_labels, test_labels, seed, confi
             test_y_window[i] = 0
     train_y = train_y_window
     test_y = test_y_window
-    _, val_x, _, val_y = train_test_split(test_x, test_y_window, test_size=0.2, shuffle=True, random_state=seed,
-                                          stratify=test_y_window)
-    
-    if configs.ab_cap:
-    # 改了这个部分
-        train_origin = train_x.copy()
+    _, val_x, _, val_y = train_test_split(train_x, train_y, test_size=0.2, shuffle=True, random_state=seed,
+                                          stratify=train_y)
 
-        if ((configs.rate != 0) and (configs.rate <= 1)):
-            train_aug_x = cut_add_paste_outlier_plus(train_origin, configs)
-            sample_num = int(configs.rate * len(train_origin))
-            sample_list = [i for i in range(sample_num)]
-            sample_list = random.sample(sample_list, sample_num)
-            sample = train_aug_x[sample_list, :, :]
-        elif configs.rate > 1:
-            train_aug_x_1 = cut_add_paste_outlier_plus(train_origin, configs)
-            train_aug_x_2 = cut_add_paste_outlier_plus(train_origin, configs)
-            train_aug_x = np.concatenate((train_aug_x_1, train_aug_x_2), axis=0)
-            sample_num = int(configs.rate * len(train_origin))
-            sample_list = [i for i in range(sample_num)]
-            sample_list = random.sample(sample_list, sample_num)
-            sample = train_aug_x[sample_list, :, :]
-        else:
-            sample_num = 0
-            sample = train_x[[], :, :]
+    train_origin = train_x.copy()
 
-        train_aug_x = sample
-        train_normal_index = np.where(train_y == 0)
+    if ((configs.rate != 0) and (configs.rate <= 1)):
+        train_aug_x = cut_add_paste_outlier_plus(train_origin, configs)
+        sample_num = int(configs.rate * len(train_origin))
+        sample_list = [i for i in range(sample_num)]
+        sample_list = random.sample(sample_list, sample_num)
+        sample = train_aug_x[sample_list, :, :]
+    elif configs.rate > 1:
+        train_aug_x_1 = cut_add_paste_outlier_plus(train_origin, configs)
+        train_aug_x_2 = cut_add_paste_outlier_plus(train_origin, configs)
+        train_aug_x = np.concatenate((train_aug_x_1, train_aug_x_2), axis=0)
+        sample_num = int(configs.rate * len(train_origin))
+        sample_list = [i for i in range(sample_num)]
+        sample_list = random.sample(sample_list, sample_num)
+        sample = train_aug_x[sample_list, :, :]
+    else:
+        sample_num = 0
+        sample = train_x[[], :, :]
 
-        train_normal_x = train_x[train_normal_index]
-        train_normal_y = np.zeros(len(train_normal_x))
-
-
+    train_aug_x = sample
+    train_normal_index = np.where(train_y == 0)
+    train_normal_x = train_x[train_normal_index]
+    train_normal_y = np.zeros(len(train_normal_x))
     center_normal = np.sum(train_normal_x, axis=0) / train_normal_x.shape[0]
     all_distance = []
     for i, x_i in enumerate(sample):
@@ -113,22 +107,17 @@ def data_generator(train_data, test_data, train_labels, test_labels, seed, confi
     distance_mean = np.mean(all_distance)
     distance_std = np.std(all_distance)
     gamma = configs.gamma
-  
     condition = all_distance < (distance_mean - gamma * distance_std)
     revise_aug_nor_index = np.where(condition)
     revise_aug_ano_index = np.where(~condition)
-
     revise_aug_nor_x = train_aug_x[revise_aug_nor_index]
     revise_aug_ano_x = train_aug_x[revise_aug_ano_index]
-
-
     revise_aug_nor_y = np.zeros(len(revise_aug_nor_x)) + 1 / gamma
     revise_aug_ano_y = np.zeros(len(revise_aug_ano_x)) + 1
     revise_aug_x = np.concatenate((revise_aug_nor_x, revise_aug_ano_x), axis=0)
     revise_aug_y = np.concatenate((revise_aug_nor_y, revise_aug_ano_y), axis=0)
     train_x = np.concatenate((train_x, revise_aug_x), axis=0)
     train_y = np.concatenate((train_y, revise_aug_y), axis=0)
-
 
     alpha = configs.alpha
     if alpha > 0 and configs.layer_mix == 0:
@@ -145,8 +134,6 @@ def data_generator(train_data, test_data, train_labels, test_labels, seed, confi
 
         train_x = np.concatenate((train_x, mixed_x), axis=0)
         train_y = np.concatenate((train_y, mixed_y), axis=0)
-
-    
     num_samples = len(train_x)
     batches = int(num_samples / configs.batch_size)
 
@@ -184,4 +171,3 @@ def data_generator(train_data, test_data, train_labels, test_labels, seed, confi
                                               shuffle=False, drop_last=False,
                                               num_workers=0)
     return train_loader, val_loader, test_loader, test_anomaly_window_num
-

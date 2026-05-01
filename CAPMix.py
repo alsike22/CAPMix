@@ -10,7 +10,7 @@ from dataloader import *
 from models.CAPMix.trainer.trainer_hidden_mix import Trainer
 from models.CAPMix.network.model_hidden_mix import base_Model
 from models.reasonable_metric import reasonable_accumulator
-from ts_datasets.ts_datasets.anomaly import NAB, IOpsCompetition, SMAP, SMD, UCR
+from ts_datasets.ts_datasets.anomaly import NAB, IOpsCompetition, SMAP, SMD, UCR, ASD, Exathlon, ACK
 from tqdm import tqdm
 from merlion.evaluate.anomaly import TSADScoreAccumulator as ScoreAcc, ScoreType
 from utils import print_object
@@ -37,9 +37,6 @@ parser.add_argument('--device', default='cuda', type=str,
                     help='cpu or cuda')
 parser.add_argument('--home_path', default=home_dir, type=str,
                     help='Project home directory')
-parser.add_argument('--ab_cap', type=int, default=0)
-parser.add_argument('--ab_lr', type=str, default=0)
-parser.add_argument('--ab_mix', type=int, default=0)
 parser.add_argument("--config_override", type=str, default=None, help="Override config, e.g. alpha=0.1")
 parser.add_argument("--pr", type=float, default=1, help="pollution rate in IOps")
 args = parser.parse_args()
@@ -76,6 +73,12 @@ else:
         dt = SMAP()
     elif selected_dataset == 'UCR':
         dt = UCR()
+    elif selected_dataset == 'ASD':
+        dt = ASD()
+    elif selected_dataset == 'Exathlon':
+        dt = Exathlon()
+    elif selected_dataset == 'ACK':
+        dt = ACK()
     else:
         dt = SMD()
     model_num = len(dt)
@@ -84,6 +87,8 @@ else:
 all_test_rpa_score, all_test_pa_score, all_test_pw_score = [], [], []
 all_anomaly_num, all_test_scores_reasonable = [], []
 all_test_aff_score, all_test_aff_precision, all_test_aff_recall = [], [], []
+all_roc_auc, all_pr_auc = [], []
+
 detect_list = np.zeros(model_num)
 fid_of_all_train, fid_of_all_test, fid_of_all_test_clean = [], [], []
 for idx in tqdm(range(model_num)):
@@ -114,17 +119,11 @@ for idx in tqdm(range(model_num)):
     print("Data loaded ...")
     train_dl, val_dl, test_dl, test_anomaly_window_num = data_generator(train_data, test_data, train_labels,
                                                                          test_labels, SEED, configs)
-    # train_dl, val_dl, test_dl, test_anomaly_window_num, fid_train_this_turn, fid_test_this_turn, fid_test_clean_this_turn, num_gt_1, num_lt_1 = data_generator_Mah(train_data, test_data, train_labels,
-    #                                                                      test_labels, SEED, configs)
-    # fid_of_all_train.append(fid_train_this_turn)
-    # fid_of_all_test.append(fid_test_this_turn)
-    # fid_of_all_test_clean.append(fid_test_clean_this_turn)
-
     model_optimizer = torch.optim.Adam(model.parameters(), lr=configs.lr, betas=(configs.beta1, configs.beta2),
                                        weight_decay=weight_decay)
 
     # Trainer
-    test_score_origin, test_aff, test_rpa_score, test_pa_score, test_pw_score, score_reasonable, predict = Trainer(model, model_optimizer, train_dl,
+    test_score_origin, test_aff, test_rpa_score, test_pa_score, test_pw_score, score_reasonable, predict, roc_auc, pr_auc= Trainer(model, model_optimizer, train_dl,
                                                                                  val_dl, test_dl, device, configs, idx)
 
     all_anomaly_num.append(test_anomaly_window_num)
@@ -135,6 +134,8 @@ for idx in tqdm(range(model_num)):
     all_test_rpa_score.append(test_rpa_score)
     all_test_pa_score.append(test_pa_score)
     all_test_pw_score.append(test_pw_score)
+    all_roc_auc.append(roc_auc)
+    all_pr_auc.append(pr_auc)
 
     if visualization:
         anomaly_score_df = pd.DataFrame(test_score_origin, columns=['Anomaly Score'])
@@ -159,6 +160,8 @@ total_test_pa_score = sum(all_test_pa_score, ScoreAcc())
 total_test_pw_score = sum(all_test_pw_score, ScoreAcc())
 total_test_scores_reasonable = sum(all_test_scores_reasonable, reasonable_accumulator())
 ucr_accuracy = total_test_scores_reasonable.get_all_metrics()
+mean_roc_auc = np.mean(all_roc_auc)
+mean_pr_auc = np.mean(all_pr_auc)
 
 print('>' * 32)
 if configs.dataset == 'UCR':
@@ -184,6 +187,8 @@ print("affiliation metrics:\n",
       f"NAB Score (balanced):       {total_test_pa_score.nab_score():.5f}\n",
       f"NAB Score (high precision): {total_test_pa_score.nab_score(fp_weight=0.22):.5f}\n",
       f"NAB Score (high recall):    {total_test_pa_score.nab_score(fn_weight=2.0):.5f}\n",
+      f"ROC-AUC:  {mean_roc_auc:.5f}\n",
+      f"PR-AUC:   {mean_pr_auc:.5f}\n",
       "seed:", SEED, "\n"
       "config setup:\n"
       )

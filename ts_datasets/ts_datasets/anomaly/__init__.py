@@ -27,8 +27,11 @@ from .ucr import UCR
 from .smd import SMD
 from .smap import SMAP
 from .msl import MSL
+from .asd import ASD
+from .exathlon import Exathlon
+from .ack import ACK
 
-__all__ = ["get_dataset", "TSADBaseDataset", "IOpsCompetition", "NAB", "Synthetic", "UCR", "SMD", "SMAP", "MSL"]
+__all__ = ["get_dataset", "TSADBaseDataset", "IOpsCompetition", "NAB", "Synthetic", "UCR", "SMD", "SMAP", "MSL", "ASD", "Exathlon", "ACK"]
 
 
 def get_dataset(dataset_name: str, rootdir: str = None) -> TSADBaseDataset:

@@ -157,16 +157,29 @@ def other_datasets(time_series, meta_data):
     train_labels = TimeSeries.from_pd(meta_data.anomaly[meta_data.trainval])
     test_labels = TimeSeries.from_pd(meta_data.anomaly[~meta_data.trainval])
     mvn = MeanVarNormalize()
-    mvn.train(train_time_series_ts + test_time_series_ts)
-    # salesforce-merlion==1.1.1
-    bias, scale = mvn.bias, mvn.scale
+    mvn.train(train_time_series_ts)
 
-    # salesforce-merlion==1.3.0
-    # bias, scale = mvn.bias[0], mvn.scale[0]
+    import importlib.metadata
+    import warnings
 
-    # salesforce-merlion==2.0.0
-    # bias, scale = mvn.bias, mvn.scale
-    # bias, scale = list(bias.values())[0], list(scale.values())[0]
+    try:
+    # 获取 Merlion version
+        merlion_version = importlib.metadata.version('salesforce-merlion')
+        print(f"Merlion: {merlion_version}")
+    except importlib.metadata.PackageNotFoundError:
+        warnings.warn("未检测到 Merlion 包，无法获取版本信息。请确保已安装 Merlion。")
+    
+    if merlion_version.startswith('1.1.1'):
+        bias, scale = mvn.bias, mvn.scale
+    elif merlion_version.startswith('1.3.0'):
+        bias, scale = mvn.bias[0], mvn.scale[0]
+    elif merlion_version.startswith('2.0.0'):
+        bias, scale = mvn.bias, mvn.scale
+        column_names = train_time_series_ts.names
+        bias = np.array([mvn.bias[name] for name in column_names])
+        scale = np.array([mvn.scale[name] for name in column_names])
+
+
 
     train_time_series = train_time_series_ts.to_pd().to_numpy()
     train_data = (train_time_series - bias) / scale
