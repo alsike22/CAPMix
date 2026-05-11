@@ -1,5 +1,5 @@
-# CAPMix: Robust Time Series Anomaly Detection Based on Abnormal Assumptions with DualSpace Mixup
-This repository provides the implementation of the _CAPMix: Robust Time Series Anomaly Detection Based on Abnormal Assumptions with DualSpace Mixup method_, called _CAPMix_ bellow. 
+# CAPMix: Robust KPI Anomaly Detection for AIOps in Noisy and Dynamic Environments
+This repository provides the implementation of the _CAPMix: Robust KPI Anomaly Detection for AIOps in Noisy and Dynamic Environments_, called _CAPMix_ bellow. 
 
 The implementation uses the Merlion libraries.
 
